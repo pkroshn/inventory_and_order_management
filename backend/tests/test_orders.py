@@ -4,10 +4,10 @@ from app.models.order import Order
 from app.models.order_item import OrderItem
 
 
-def test_create_order_success(client, sample_product):
+def test_create_order_success(client, db_session, sample_product):
     """Test successful order creation with stock reduction"""
     initial_stock = sample_product.stock_quantity
-    
+
     response = client.post(
         "/api/v1/orders/",
         json={
@@ -19,20 +19,19 @@ def test_create_order_success(client, sample_product):
             ]
         }
     )
-    
+
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "Pending"
     assert len(data["order_items"]) == 1
     assert data["order_items"][0]["quantity_ordered"] == 10
     assert data["order_items"][0]["product_id"] == sample_product.id
-    
-    # Verify stock was reduced
-    from app.database import SessionLocal
-    db = SessionLocal()
-    updated_product = db.query(Product).filter(Product.id == sample_product.id).first()
+
+    # Verify stock was reduced (use same test session)
+    db_session.expire_all()  # clear identity map so we see committed state
+    updated_product = db_session.get(Product, sample_product.id)
+    assert updated_product is not None
     assert updated_product.stock_quantity == initial_stock - 10
-    db.close()
 
 
 def test_create_order_insufficient_stock(client, sample_product):

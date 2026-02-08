@@ -1,17 +1,18 @@
 # Inventory & Order Management Service
 
-A production-ready backend service for managing products and orders, built with FastAPI, PostgreSQL, SQLAlchemy, and React.
+A full-stack service for managing products and orders: FastAPI backend (Python, PostgreSQL, SQLAlchemy) and React frontend (TypeScript, Vite).
+
+**Quick start (evaluators):** From the project root run `make start`, then open the frontend at http://localhost:3000 and API docs at http://localhost:8000/api/v1/docs. Use `make stop` to stop. See [Quick Start](#quick-start) for details.
 
 ## Features
 
-- **Product Management**: Create and list products with stock tracking
-- **Order Management**: Create orders with automatic stock reduction
-- **Transaction Safety**: Atomic order creation with row-level locking to prevent race conditions
-- **Status Management**: Update order status with validation (Pending → Shipped → Cancelled)
-- **RESTful API**: Clean, well-documented API endpoints
-- **Frontend Dashboard**: React-based UI for viewing products and managing orders
-- **Docker Support**: Complete Docker setup for easy deployment
-- **Makefile**: Single-command start/stop and common tasks
+- **Product Management**: Create, list, edit, and soft-delete products with stock tracking; bulk delete with confirmation
+- **Order Management**: Create orders with automatic stock reduction; edit pending orders (add items); view order details
+- **Order Actions**: Update status (Pending / Shipped / Cancelled), ship order, cancel order (delete)
+- **Transaction Safety**: Atomic order creation and add-items with row-level locking to prevent race conditions
+- **RESTful API**: Documented endpoints at `/api/v1/docs` and `/api/v1/redoc`
+- **Frontend Dashboard**: React UI for products and orders with modals for create/edit/view/delete
+- **Docker**: `docker-compose` plus Makefile (`make start` / `make stop` / `make test`)
 
 ## Tech Stack
 
@@ -76,7 +77,7 @@ make stop     # Stop all services
 
 Then open:
 - **Frontend**: http://localhost:3000
-- **API docs**: http://localhost:8000/docs
+- **API docs**: http://localhost:8000/api/v1/docs
 - **Health**: http://localhost:8000/health
 
 ### Running with Docker
@@ -113,7 +114,7 @@ Then open:
 
 4. **Access the application**
    - Frontend: http://localhost:3000
-   - API Documentation: http://localhost:8000/docs
+   - API Documentation: http://localhost:8000/api/v1/docs
    - API Health Check: http://localhost:8000/health
 
 ### Make commands
@@ -210,10 +211,26 @@ Then open:
 
 - `PATCH /api/v1/orders/{order_id}/status` - Update order status
   ```json
+  { "status": "Shipped" }
+  ```
+
+- `POST /api/v1/orders/{order_id}/items/` - Add items to a **pending** order (stock checked and reduced)
+  ```json
   {
-    "status": "Shipped"
+    "items": [
+      { "product_id": 1, "quantity": 2 }
+    ]
   }
   ```
+
+- `DELETE /api/v1/orders/{order_id}/` - Cancel order (sets status to Cancelled)
+
+### Products (additional)
+
+- `GET /api/v1/products/{product_id}` - Get product by ID
+- `PATCH /api/v1/products/{product_id}` - Update product
+- `DELETE /api/v1/products/{product_id}` - Soft-delete product
+- `POST /api/v1/products/bulk-delete` - Bulk soft-delete (body: `{ "product_ids": [1, 2] }`)
 
 ## Running Tests
 
@@ -231,10 +248,11 @@ pytest
 ```
 
 Test coverage includes:
-- Product creation and listing
+- Product CRUD and listing
 - Order creation with stock reduction
+- Adding items to pending orders
 - Insufficient stock handling
-- Order status updates
+- Order status updates and cancellation
 - Error handling
 
 ## Design Decisions
@@ -303,25 +321,18 @@ When fetching orders, related `order_items` and `products` are eagerly loaded us
 
 ## Future Improvements
 
-Due to time constraints, the following features were not implemented but would be valuable additions:
+Possible enhancements:
 
-1. **Order Cancellation Logic**: When an order is cancelled, stock should be restored. This requires additional business logic.
+1. **Stock restoration on cancel**: Restore product stock when an order is cancelled (currently cancellation only updates status).
 
-2. **Authentication & Authorization**: Add user authentication and role-based access control.
+2. **Authentication & Authorization**: User auth and role-based access control.
 
-3. **Logging**: Implement structured logging (e.g., using Python's `logging` module or a service like Loguru).
-
-4. **Monitoring**: Add health checks, metrics, and monitoring (e.g., Prometheus, Grafana).
-
-5. **API Rate Limiting**: Implement rate limiting to prevent abuse.
-
-6. **Caching**: Add Redis caching for frequently accessed products.
-
-7. **Search & Filtering**: Add search and filtering capabilities for products and orders.
-
-8. **Bulk Operations**: Support for bulk product creation and order updates.
-
-9. **WebSocket Support**: Real-time updates for order status changes.
+3. **Logging**: Structured logging (e.g. Python `logging` or Loguru).
+4. **Monitoring**: Health checks, metrics (e.g. Prometheus/Grafana).
+5. **API rate limiting**: Prevent abuse.
+6. **Caching**: Redis for frequently accessed data.
+7. **Search & filtering**: For products and orders.
+8. **WebSockets**: Real-time order status updates.
 
 ## Troubleshooting
 

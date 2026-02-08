@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, CheckConstraint
+from sqlalchemy import Column, Integer, String, Numeric, CheckConstraint, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -10,6 +10,7 @@ class Product(Base):
     name = Column(String, nullable=False, index=True)
     price = Column(Numeric(10, 2), nullable=False)
     stock_quantity = Column(Integer, nullable=False, default=0)
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
     # Relationships
     order_items = relationship("OrderItem", back_populates="product")

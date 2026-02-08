@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 from app.database import Base, get_db
+from app.api.dependencies import get_database_session
 from app.main import app
 from app.models.product import Product
 from app.models.order import Order
@@ -37,8 +38,12 @@ def client(db_session):
             yield db_session
         finally:
             pass
-    
+
+    def override_get_database_session():
+        yield from override_get_db()
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_database_session] = override_get_database_session
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

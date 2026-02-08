@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from typing import List
 from app.api.dependencies import get_database_session
 from app.services.product_service import ProductService
-from app.schemas.product import ProductCreate, ProductResponse, ProductListResponse
+from app.schemas.product import ProductCreate, ProductUpdate, ProductResponse, ProductListResponse
 
 router = APIRouter()
 
@@ -32,3 +32,48 @@ def list_products(
         skip=skip,
         limit=limit
     )
+
+
+@router.get("/{product_id}/", response_model=ProductResponse)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_database_session)
+):
+    """Get a single product by ID"""
+    product = ProductService.get_product(db, product_id)
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
+@router.patch("/{product_id}/", response_model=ProductResponse)
+def update_product(
+    product_id: int,
+    product_data: ProductUpdate,
+    db: Session = Depends(get_database_session)
+):
+    """Update a product by ID"""
+    product = ProductService.update_product(db, product_id, product_data)
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
+@router.delete("/{product_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_database_session)
+):
+    """Delete a single product"""
+    if not ProductService.delete_product(db, product_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+
+@router.post("/bulk-delete/", status_code=status.HTTP_200_OK)
+def bulk_delete_products(
+    product_ids: List[int] = Body(..., embed=False),
+    db: Session = Depends(get_database_session)
+):
+    """Delete multiple products by ID. Request body: JSON array of product IDs, e.g. [1, 2, 3]."""
+    deleted = ProductService.delete_products_bulk(db, product_ids)
+    return {"deleted": deleted}
