@@ -10,7 +10,10 @@ from app.database import engine, Base
 app = FastAPI(
     title="Inventory & Order Management Service",
     description="A backend service for managing products and orders",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/api/v1/docs",
+    redoc_url="/api/v1/redoc",
+    openapi_url="/api/v1/openapi.json",
 )
 
 # Configure CORS

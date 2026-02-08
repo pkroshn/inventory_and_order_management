@@ -20,9 +20,12 @@ class OrderService:
             # Collect all product IDs
             product_ids = [item.product_id for item in order_data.items]
             
-            # Lock products for update to prevent race conditions
-            # This ensures atomic stock checking and reduction
-            products_query = select(Product).where(Product.id.in_(product_ids)).with_for_update()
+            # Lock products for update to prevent race conditions (exclude soft-deleted)
+            products_query = (
+                select(Product)
+                .where(Product.id.in_(product_ids), Product.deleted_at.is_(None))
+                .with_for_update()
+            )
             products = db.execute(products_query).scalars().all()
             
             # Create a dictionary for quick lookup
@@ -107,3 +110,54 @@ class OrderService:
         db.refresh(order)
         
         return order
+
+    @staticmethod
+    def add_items_to_order(db: Session, order_id: int, items: List[OrderItemCreate]) -> Order:
+        """Add line items to an existing Pending order. Validates stock and reduces it."""
+        if not items:
+            order = OrderService.get_order(db, order_id)
+            if not order:
+                raise ValueError(f"Order with ID {order_id} not found")
+            return order
+        try:
+            order = db.query(Order).filter(Order.id == order_id).first()
+            if not order:
+                raise ValueError(f"Order with ID {order_id} not found")
+            if order.status != OrderStatus.PENDING:
+                raise ValueError("Can only add items to a Pending order")
+            product_ids = [item.product_id for item in items]
+            products_query = (
+                select(Product)
+                .where(Product.id.in_(product_ids), Product.deleted_at.is_(None))
+                .with_for_update()
+            )
+            products = db.execute(products_query).scalars().all()
+            products_dict = {p.id: p for p in products}
+            for item in items:
+                if item.product_id not in products_dict:
+                    raise ProductNotFoundError(f"Product with ID {item.product_id} not found")
+                product = products_dict[item.product_id]
+                if product.stock_quantity < item.quantity:
+                    raise InsufficientStockError(
+                        f"Insufficient stock for product '{product.name}'. "
+                        f"Available: {product.stock_quantity}, Requested: {item.quantity}"
+                    )
+            for item in items:
+                product = products_dict[item.product_id]
+                product.stock_quantity -= item.quantity
+                order_item = OrderItem(
+                    order_id=order_id,
+                    product_id=product.id,
+                    quantity_ordered=item.quantity,
+                    price_at_time=product.price,
+                )
+                db.add(order_item)
+            db.commit()
+            db.refresh(order)
+            return order
+        except (InsufficientStockError, ProductNotFoundError, ValueError):
+            db.rollback()
+            raise
+        except Exception:
+            db.rollback()
+            raise

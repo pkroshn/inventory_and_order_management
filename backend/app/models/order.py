@@ -16,7 +16,11 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    status = Column(SQLEnum(OrderStatus), nullable=False, default=OrderStatus.PENDING)
+    status = Column(
+        SQLEnum(OrderStatus, values_callable=lambda x: [e.value for e in x]),
+        nullable=False,
+        default=OrderStatus.PENDING,
+    )
 
     # Relationships
     order_items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")

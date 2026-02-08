@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_database_session
 from app.services.order_service import OrderService
 from app.schemas.order import OrderCreate, OrderResponse, OrderStatusUpdate, OrderItemResponse
-from app.models.order import OrderStatus
+from app.models.order import Order, OrderStatus
+from app.models.order_item import OrderItem
 from app.exceptions import InsufficientStockError, ProductNotFoundError
 
 router = APIRouter()
@@ -116,38 +117,104 @@ def get_order(
     )
 
 
+def _do_update_order_status(
+    order_id: int,
+    status_update: OrderStatusUpdate,
+    db: Session,
+):
+    """Shared logic for PATCH order status (used by both with and without trailing slash)."""
+    order = OrderService.update_order_status(db, order_id, status_update.status)
+    order = OrderService.get_order(db, order.id)
+    order_items_response = [
+        OrderItemResponse(
+            id=item.id,
+            product_id=item.product_id,
+            quantity_ordered=item.quantity_ordered,
+            price_at_time=item.price_at_time,
+            product_name=item.product.name if item.product else None,
+        )
+        for item in order.order_items
+    ]
+    return OrderResponse(
+        id=order.id,
+        created_at=order.created_at,
+        status=order.status,
+        order_items=order_items_response,
+    )
+
+
 @router.patch("/{order_id}/status", response_model=OrderResponse)
+@router.patch("/{order_id}/status/", response_model=OrderResponse)
 def update_order_status(
     order_id: int,
     status_update: OrderStatusUpdate,
-    db: Session = Depends(get_database_session)
+    db: Session = Depends(get_database_session),
 ):
-    """Update order status"""
+    """Update order status. Accepts body: { \"status\": \"Shipped\" } (or Pending, Cancelled)."""
     try:
-        order = OrderService.update_order_status(db, order_id, status_update.status)
-        
-        # Reload with relationships
-        order = OrderService.get_order(db, order.id)
-        
-        # Format response
-        order_items_response = []
-        for item in order.order_items:
-            order_items_response.append(OrderItemResponse(
+        return _do_update_order_status(order_id, status_update, db)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/{order_id}/items/", response_model=OrderResponse)
+def add_order_items(
+    order_id: int,
+    order_data: OrderCreate,
+    db: Session = Depends(get_database_session),
+):
+    """Add items to an existing Pending order."""
+    if not order_data.items:
+        order = OrderService.get_order(db, order_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        # Return current order as response
+        order_items_response = [
+            OrderItemResponse(
                 id=item.id,
                 product_id=item.product_id,
                 quantity_ordered=item.quantity_ordered,
                 price_at_time=item.price_at_time,
-                product_name=item.product.name if item.product else None
-            ))
-        
-        return OrderResponse(
-            id=order.id,
-            created_at=order.created_at,
-            status=order.status,
-            order_items=order_items_response
-        )
+                product_name=item.product.name if item.product else None,
+            )
+            for item in order.order_items
+        ]
+        return OrderResponse(id=order.id, created_at=order.created_at, status=order.status, order_items=order_items_response)
+    try:
+        order = OrderService.add_items_to_order(db, order_id, order_data.items)
+        order = OrderService.get_order(db, order.id)
+        order_items_response = [
+            OrderItemResponse(
+                id=item.id,
+                product_id=item.product_id,
+                quantity_ordered=item.quantity_ordered,
+                price_at_time=item.price_at_time,
+                product_name=item.product.name if item.product else None,
+            )
+            for item in order.order_items
+        ]
+        return OrderResponse(id=order.id, created_at=order.created_at, status=order.status, order_items=order_items_response)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except InsufficientStockError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except ProductNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.delete("/{order_id}/", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_database_session),
+):
+    """Cancel an order (sets status to Cancelled)."""
+    try:
+        OrderService.update_order_status(db, order_id, OrderStatus.CANCELLED)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail=str(e),
         )

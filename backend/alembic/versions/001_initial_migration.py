@@ -19,9 +19,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create enum type for order status
-    order_status_enum = postgresql.ENUM('Pending', 'Shipped', 'Cancelled', name='orderstatus')
-    order_status_enum.create(op.get_bind(), checkfirst=True)
+    # Create enum type for order status (idempotent: skip if already exists)
+    conn = op.get_bind()
+    conn.execute(sa.text(
+        "DO $$ BEGIN "
+        "CREATE TYPE orderstatus AS ENUM ('Pending', 'Shipped', 'Cancelled'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$"
+    ))
+    order_status_enum = postgresql.ENUM('Pending', 'Shipped', 'Cancelled', name='orderstatus', create_type=False)
     
     # Create products table
     op.create_table(
@@ -77,6 +83,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_products_id'), table_name='products')
     op.drop_table('products')
     
-    # Drop enum type
-    order_status_enum = postgresql.ENUM(name='orderstatus')
-    order_status_enum.drop(op.get_bind(), checkfirst=True)
+    # Drop enum type (idempotent)
+    op.get_bind().execute(sa.text(
+        "DROP TYPE IF EXISTS orderstatus CASCADE"
+    ))
